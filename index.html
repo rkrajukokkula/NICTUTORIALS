@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-<base target="_top">
 <meta charset="utf-8">
 <title>Tutorial Student Activity Management System</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -144,35 +143,42 @@ var STATE = {
   role: null, name: null, teacherId: null, classes: [], batches: [],
   studentsCache: [], teachersCache: []
 };
-var INITIAL_STUDENT_ID = <?= JSON.stringify(initialStudentId || '') ?>;
+var INITIAL_STUDENT_ID = new URLSearchParams(location.search).get('studentid') || '';
 
-/* ===================== UTIL: promise wrapper ===================== */
-function gs(fn){
-  return function(){
-    var args = Array.prototype.slice.call(arguments);
-    return new Promise(function(resolve, reject){
-      google.script.run
-        .withSuccessHandler(resolve)
-        .withFailureHandler(function(err){ reject(err); })[fn].apply(null, args);
-    });
-  };
+/* ===================== CONFIG =====================
+ * Paste your deployed Apps Script Web App URL here (it ends in /exec).
+ * You get this after Deploy -> New deployment -> Web app in the
+ * Apps Script editor attached to your Google Sheet.
+ * ==================================================== */
+var API_URL = 'https://script.google.com/macros/s/AKfycbwTjsFAQd_if1MPbaBl5Pb8oBmZ5BUXOTy303W9jfSecCnoO0kb2l4kPf0mwK5oJXVyMw/exec';
+
+/* ===================== UTIL: fetch-based API client ===================== */
+function callApi(action, payload){
+  payload = payload || {};
+  payload.action = action;
+  return fetch(API_URL, {
+    method: 'POST',
+    // text/plain avoids a CORS pre-flight request against Apps Script
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  }).then(function(r){ return r.json(); });
 }
 var api = {
-  loginAdmin: gs('loginAdmin'),
-  loginTeacher: gs('loginTeacher'),
-  getStudents: gs('getStudents'),
-  saveStudent: gs('saveStudent'),
-  deleteStudent: gs('deleteStudent'),
-  getTeachers: gs('getTeachers'),
-  saveTeacher: gs('saveTeacher'),
-  deleteTeacher: gs('deleteTeacher'),
-  getClassesAndBatches: gs('getClassesAndBatches'),
-  saveDailyEntry: gs('saveDailyEntry'),
-  getEntriesForStudent: gs('getEntriesForStudent'),
-  getEntriesForTeacherDate: gs('getEntriesForTeacherDate'),
-  getStudentProfile: gs('getStudentProfile'),
-  getDashboardData: gs('getDashboardData'),
-  getReportData: gs('getReportData')
+  loginAdmin: function(u,p){ return callApi('loginAdmin', {username:u, password:p}); },
+  loginTeacher: function(u,p){ return callApi('loginTeacher', {username:u, password:p}); },
+  getStudents: function(){ return callApi('getStudents'); },
+  saveStudent: function(data){ return callApi('saveStudent', {data:data}); },
+  deleteStudent: function(id){ return callApi('deleteStudent', {studentId:id}); },
+  getTeachers: function(){ return callApi('getTeachers'); },
+  saveTeacher: function(data){ return callApi('saveTeacher', {data:data}); },
+  deleteTeacher: function(id){ return callApi('deleteTeacher', {teacherId:id}); },
+  getClassesAndBatches: function(){ return callApi('getClassesAndBatches'); },
+  saveDailyEntry: function(data, teacherId, teacherName){ return callApi('saveDailyEntry', {data:data, teacherId:teacherId, teacherName:teacherName}); },
+  getEntriesForStudent: function(id){ return callApi('getEntriesForStudent', {studentId:id}); },
+  getEntriesForTeacherDate: function(tid,date){ return callApi('getEntriesForTeacherDate', {teacherId:tid, date:date}); },
+  getStudentProfile: function(id){ return callApi('getStudentProfile', {studentId:id}); },
+  getDashboardData: function(){ return callApi('getDashboardData'); },
+  getReportData: function(filters){ return callApi('getReportData', {filters:filters}); }
 };
 
 /* ===================== INIT ===================== */
