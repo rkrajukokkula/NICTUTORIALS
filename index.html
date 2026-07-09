@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html>
 <head>
 <meta charset="utf-8">
@@ -665,6 +664,8 @@ function exportCSV(rows, name){
 
 /* ===================== PARENT PORTAL (no login, read-only) ===================== */
 function loadParentPortal(studentId){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('appScreen').classList.add('hidden');
   document.getElementById('parentScreen').classList.remove('hidden');
   var content = document.getElementById('parentContent');
   content.innerHTML = '<div class="empty">Loading student profile…</div>';
