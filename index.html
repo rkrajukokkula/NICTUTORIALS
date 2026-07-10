@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html>
-  
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
@@ -20,12 +19,13 @@
   img.logo{height:44px;width:44px;object-fit:contain;border-radius:8px;background:#fff;padding:2px;flex-shrink:0;}
 
   /* ---------- Brand header (shared) ---------- */
-  .brand-header{display:flex;align-items:center;gap:12px;padding:12px 16px;
-    background:linear-gradient(90deg,var(--green),var(--blue));color:#fff;flex-wrap:wrap;}
-  .brand-header .brand-text{line-height:1.3;min-width:0;}
-  .brand-header .brand-text b{font-size:15px;display:block;}
-  .brand-header .brand-text span{font-size:11px;opacity:.9;display:block;}
+  .brand-header{display:flex;align-items:center;gap:10px;padding:10px 12px;
+    background:linear-gradient(90deg,var(--green),var(--blue));color:#fff;min-width:0;}
+  .brand-header .brand-text{line-height:1.25;min-width:0;overflow:hidden;}
+  .brand-header .brand-text b{font-size:15px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .brand-header .brand-text span{font-size:11px;opacity:.9;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .print-header{display:none;}
+  .app-sticky{position:sticky;top:0;z-index:30;}
 
   /* ---------- Login ---------- */
   #loginScreen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -52,15 +52,21 @@
   #loginMsg{color:var(--danger);font-size:13px;text-align:center;margin-top:6px;min-height:16px;}
 
   /* ---------- App shell ---------- */
-  header.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
-  header.topbar .userinfo{font-size:13px;opacity:.9;}
-  header.topbar .actions{display:flex;align-items:center;gap:8px;}
+  header.topbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:nowrap;}
+  header.topbar .brand-header{flex:1;min-width:0;padding-right:0;}
+  header.topbar .userinfo{font-size:12px;opacity:.9;white-space:nowrap;}
+  header.topbar .actions{display:flex;align-items:center;gap:6px;flex-shrink:0;padding:8px 10px 8px 0;}
   nav.tabs{display:flex;gap:4px;background:var(--card);padding:6px 10px;overflow-x:auto;border-bottom:1px solid var(--border);
-    position:sticky;top:68px;z-index:19;-webkit-overflow-scrolling:touch;}
+    -webkit-overflow-scrolling:touch;}
   nav.tabs button{white-space:nowrap;background:transparent;border:none;padding:10px 14px;border-radius:8px;
     cursor:pointer;font-weight:600;color:var(--muted);font-size:13px;min-height:40px;}
   nav.tabs button.active{background:var(--green);color:#fff;}
   main{padding:14px;max-width:1200px;margin:0 auto;width:100%;}
+  @media(max-width:560px){
+    header.topbar .brand-header .brand-text span{display:none;} /* hide address on very small screens, keep name */
+    header.topbar .userinfo{display:none;} /* hide "Name (role)" text, keep icon buttons visible */
+    .toggle-theme{padding:8px;min-width:40px;}
+  }
   .grid{display:grid;gap:12px;}
   .grid-4{grid-template-columns:repeat(4,1fr);}
   .grid-3{grid-template-columns:repeat(3,1fr);}
@@ -144,18 +150,20 @@
 
 <!-- ================= APP ================= -->
 <div id="appScreen" class="hidden">
-  <header class="topbar">
-    <div class="brand-header" style="flex:1;">
-      <img class="logo" src="logo.jpg" alt="Logo" onerror="this.style.display='none'">
-      <div class="brand-text"><b id="instituteNameLbl">Tutorial Institute</b><span id="instituteAddrLbl"></span></div>
-    </div>
-    <div class="actions">
-      <span class="userinfo" id="userInfoLbl"></span>
-      <button class="toggle-theme" onclick="toggleTheme()">🌓</button>
-      <button class="toggle-theme" onclick="logout()">Logout</button>
-    </div>
-  </header>
-  <nav class="tabs" id="navTabs"></nav>
+  <div class="app-sticky">
+    <header class="topbar">
+      <div class="brand-header">
+        <img class="logo" src="logo.jpg" alt="Logo" onerror="this.style.display='none'">
+        <div class="brand-text"><b id="instituteNameLbl">Tutorial Institute</b><span id="instituteAddrLbl"></span></div>
+      </div>
+      <div class="actions">
+        <span class="userinfo" id="userInfoLbl"></span>
+        <button class="toggle-theme" onclick="toggleTheme()" title="Toggle theme">🌓</button>
+        <button class="toggle-theme" onclick="logout()" title="Logout">🚪 Logout</button>
+      </div>
+    </header>
+    <nav class="tabs" id="navTabs"></nav>
+  </div>
   <main id="mainContent"></main>
   <div class="footer-note">Tutorial Student Activity Management System</div>
 </div>
@@ -183,7 +191,7 @@ var INITIAL_STUDENT_ID = new URLSearchParams(location.search).get('studentId')
   || new URLSearchParams(location.search).get('studentid') || '';
 
 /* ===================== CONFIG ===================== */
-var API_URL = 'https://script.google.com/macros/s/AKfycbzh1jxTukHMSe17imyro5uelQGuMIi5hrjjKxDgO8uk5L5vr4NK23-zSCAuhkCGxPVIxw/exec';
+var API_URL = 'https://script.google.com/macros/s/AKfycbxAICWYSIB4DvjqeJy8RoLX0pkjXRwr24EhqVNbBqaDbA9ofJlgUti_LDDJvar6CRPsQw/exec';
 
 /* ===================== fetch-based API client ===================== */
 function callApi(action, payload){
@@ -664,6 +672,7 @@ function exportCSV(rows, name){
 }
 
 /* ===================== PARENT PORTAL (no login, read-only) ===================== */
+var parentAllEntries = []; // cached client-side so the date filter needs no extra API calls
 function loadParentPortal(studentId){
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appScreen').classList.add('hidden');
@@ -674,15 +683,11 @@ function loadParentPortal(studentId){
     var cfg = res[0], profile = res[1];
     applyBrandingEverywhere(cfg);
     if (!profile.success){ content.innerHTML = '<div class="empty">'+profile.message+'</div>'; return; }
-    var s = profile.student, entries = profile.entries;
+    parentAllEntries = profile.entries || [];
 
-    var homework = [], reading = [], testMarks = entries.filter(function(e){return e.TestSubject;});
-    entries.forEach(function(e){
-      (e.Activities||[]).forEach(function(a){
-        if (a.activity==='Homework') homework.push({date:e.Date, subject:a.subject, time:a.time, status:a.status});
-        if (a.activity==='Reading') reading.push({date:e.Date, subject:a.subject, time:a.time, status:a.status});
-      });
-    });
+    var s = profile.student;
+    var today = new Date().toISOString().substring(0,10);
+    var monthAgo = new Date(Date.now() - 30*86400000).toISOString().substring(0,10);
 
     var html = '<div class="card parent-hero"><div><h2 style="margin:0 0 4px;">'+s.Name+'</h2>'
       + '<div style="color:var(--muted);font-size:13px;">Student ID: '+s.StudentID+' • Class '+s.Class+' • Batch '+s.Batch+'</div>'
@@ -690,38 +695,54 @@ function loadParentPortal(studentId){
       + '<div class="parent-actions"><button class="btn btn-outline btn-sm" onclick="window.print()">🖨️ Print</button>'
       + '<button class="btn btn-blue btn-sm" onclick="window.print()">⬇️ Download PDF</button></div></div>';
 
-    html += '<div class="section-title">📊 Attendance % (Month-wise)</div><div class="card table-wrap">'
-      + (profile.monthlyAttendance.length ? tableize(profile.monthlyAttendance,['month','pct'],['Month','Attendance %']) : '<div class="empty">No attendance recorded yet</div>')
-      + '<div style="margin-top:8px;font-weight:700;">Overall: '+profile.attendancePct+'%</div></div>';
+    html += '<div class="grid grid-2" style="margin-top:12px;">'
+      + statCard(profile.attendancePct + '%', 'Overall Attendance')
+      + statCard(parentAllEntries.length, 'Total Days Recorded')
+      + '</div>';
 
-    html += '<div class="section-title">📝 Daily Activities</div><div class="card table-wrap">'
-      + tableize(entries.filter(function(e){return (e.Activities||[]).length;}).slice(0,30).reduce(function(acc,e){
-          (e.Activities||[]).forEach(function(a){ acc.push({date:e.Date, activity:a.activity, subject:a.subject, time:a.time, status:a.status}); });
-          return acc;
-        },[]), ['date','activity','subject','time','status'], ['Date','Activity','Subject','Time','Status']) + '</div>';
+    html += '<div class="section-title">🔎 Filter by Date</div>'
+      + '<div class="card toolbar no-print">'
+      + '<div><label>From</label><input type="date" id="p_From" value="'+monthAgo+'"></div>'
+      + '<div><label>To</label><input type="date" id="p_To" value="'+today+'"></div>'
+      + '<button class="btn btn-primary" style="width:auto;align-self:flex-end;" onclick="renderParentTimeline()">Apply</button>'
+      + '<button class="btn btn-outline" style="width:auto;align-self:flex-end;" onclick="clearParentFilter()">Show All</button>'
+      + '</div>';
 
-    html += '<div class="section-title">📘 Homework</div><div class="card table-wrap">'
-      + (homework.length ? tableize(homework,['date','subject','time','status'],['Date','Subject','Time','Status']) : '<div class="empty">No homework records</div>') + '</div>';
+    html += '<div class="section-title">📅 Daily Activities & Teacher Remarks</div>'
+      + '<div class="card table-wrap" id="parentTimelineArea"></div>';
 
-    html += '<div class="section-title">📖 Reading</div><div class="card table-wrap">'
-      + (reading.length ? tableize(reading,['date','subject','time','status'],['Date','Subject','Time','Status']) : '<div class="empty">No reading records</div>') + '</div>';
-
+    var testMarks = parentAllEntries.filter(function(e){ return e.TestSubject; });
     html += '<div class="section-title">📄 Test Marks</div><div class="card table-wrap">'
       + (testMarks.length ? tableize(testMarks,['Date','TestType','TestSubject','ObtainedMarks','MaxMarks','Percentage','Grade','PassFail'],
           ['Date','Type','Subject','Marks','Max','%','Grade','Result']) : '<div class="empty">No test records</div>') + '</div>';
 
-    html += '<div class="section-title">🗣️ Teacher Remarks</div><div class="card table-wrap">'
-      + (entries.filter(function(e){return e.Observation;}).length
-          ? tableize(entries.filter(function(e){return e.Observation;}).slice(0,20),['Date','Behaviour','Observation'],['Date','Behaviour','Remark'])
-          : '<div class="empty">No remarks yet</div>') + '</div>';
-
-    var months = {}; entries.forEach(function(e){ var m=e.Date.substring(0,7); months[m]=(months[m]||0)+1; });
-    var summaryRows = Object.keys(months).sort().reverse().map(function(m){ return {month:m, records:months[m]}; });
-    html += '<div class="section-title">📅 Monthly Summary</div><div class="card table-wrap">'
-      + (summaryRows.length ? tableize(summaryRows,['month','records'],['Month','Total Records']) : '<div class="empty">No data yet</div>') + '</div>';
-
     content.innerHTML = html;
+    renderParentTimeline();
   });
+}
+function clearParentFilter(){
+  document.getElementById('p_From').value = '';
+  document.getElementById('p_To').value = '';
+  renderParentTimeline();
+}
+function renderParentTimeline(){
+  var from = document.getElementById('p_From').value;
+  var to = document.getElementById('p_To').value;
+  var rows = parentAllEntries.filter(function(e){
+    if (from && e.Date < from) return false;
+    if (to && e.Date > to) return false;
+    return true;
+  });
+  var timeline = rows.map(function(e){
+    var acts = (e.Activities||[]).map(function(a){
+      return a.activity + (a.subject ? ' - '+a.subject : '') + (a.time ? ' ('+a.time+(a.status?', '+a.status:'')+')' : (a.status ? ' ('+a.status+')' : ''));
+    }).join('; ');
+    return { date:e.Date, attendance:e.Attendance||'-', activities: acts || '-', remarks: e.Observation || '-' };
+  });
+  var area = document.getElementById('parentTimelineArea');
+  area.innerHTML = timeline.length
+    ? tableize(timeline, ['date','attendance','activities','remarks'], ['Date','Attendance','Activities Performed','Teacher Remarks'])
+    : '<div class="empty">No records in this date range</div>';
 }
 </script>
 </body>
