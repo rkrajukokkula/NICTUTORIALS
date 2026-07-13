@@ -191,7 +191,7 @@ var INITIAL_STUDENT_ID = new URLSearchParams(location.search).get('studentId')
   || new URLSearchParams(location.search).get('studentid') || '';
 
 /* ===================== CONFIG ===================== */
-var API_URL = 'https://script.google.com/macros/s/AKfycbxAICWYSIB4DvjqeJy8RoLX0pkjXRwr24EhqVNbBqaDbA9ofJlgUti_LDDJvar6CRPsQw/exec';
+var API_URL = 'https://script.google.com/macros/s/AKfycbxiscpdH_JapZlcucgFspkyxVrgxF0wABOTTP-UIAvaEvhB95QIIxWg2auAMUcF6iRlmg/exec';
 
 /* ===================== fetch-based API client ===================== */
 function callApi(action, payload){
@@ -218,7 +218,10 @@ var api = {
   getEntriesForDate: function(date){ return callApi('getEntriesForDate', {date:date}); },
   getStudentProfile: function(id){ return callApi('getStudentProfile', {studentId:id}); },
   getDashboardData: function(){ return callApi('getDashboardData'); },
-  getReportData: function(filters){ return callApi('getReportData', {filters:filters}); }
+  getReportData: function(filters){ return callApi('getReportData', {filters:filters}); },
+  saveHoliday: function(data, actor){ return callApi('saveHoliday', {data:data, actor:actor}); },
+  deleteHoliday: function(date){ return callApi('deleteHoliday', {date:date}); },
+  getHolidays: function(filters){ return callApi('getHolidays', {filters:filters}); }
 };
 // simple in-memory cache to cut down on repeated API calls (performance)
 function cached(key, fetcher, force){
@@ -321,7 +324,11 @@ function renderDashboard(){
   var main = document.getElementById('mainContent');
   main.innerHTML = '<div class="empty">Loading dashboard…</div>';
   api.getDashboardData().then(function(d){
-    var html = '<div class="grid grid-4">'
+    var html = '';
+    if (d.holidayToday) {
+      html += '<div class="card" style="background:#fdf0d0;border-color:#e0a51e;margin-bottom:12px;"><b>🏖️ Today is a Holiday:</b> '+d.holidayToday+'</div>';
+    }
+    html += '<div class="grid grid-4">'
       + statCard(d.totalStudents,'Active Students')
       + statCard(d.present,'Present Today','green')
       + statCard(d.absent,'Absent Today','red')
@@ -390,7 +397,7 @@ function removeStudent(id){
 }
 function openStudentModal(id){
   var s = id ? CACHE.students.find(function(x){return x.StudentID===id;}) : {};
-  var classOpts = STATE.classes.map(function(c){return '<option '+(s.Class===c?'selected':'')+'>'+c+'</option>';}).join('');
+  var classOpts = STATE.classes.map(function(c){return '<option '+(String(s.Class)===String(c)?'selected':'')+'>'+c+'</option>';}).join('');
   var batchOpts = STATE.batches.map(function(b){return '<option '+(s.Batch===b?'selected':'')+'>'+b+'</option>';}).join('');
   var html = '<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">'
     + '<span class="close-x" onclick="closeModal()">&times;</span><h3>'+(id?'Edit':'Add')+' Student</h3>'
@@ -470,35 +477,57 @@ var ACTIVITY_OPTIONS = ['Homework','Reading','Writing Practice','Worksheets','Do
   'Handwriting','Project Work','Computer Practice','Group Discussion','Oral Test','Assignment','Exam Preparation','Others'];
 var TIME_SUGGESTIONS = ['15 Minutes','30 Minutes','45 Minutes','1 Hour','2 Hour','More than 2 hours'];
 var actRowSeq = 0;
+// persists across tab switches within the session so Dashboard <-> Daily Entry keeps your place
+var entryState = { date:'', class:'', studentId:'' };
 
 function renderEntry(){
   var main = document.getElementById('mainContent');
-  var today = new Date().toISOString().substring(0,10);
+  var today = entryState.date || new Date().toISOString().substring(0,10);
+  entryState.date = today;
   cached('students', api.getStudents).then(function(list){
     CACHE.studentsActive = list.filter(function(s){ return s.Status==='Active'; });
-    var classOpts = ['<option value="">All Classes</option>'].concat(STATE.classes.map(function(c){return '<option>'+c+'</option>';})).join('');
+    var classOpts = ['<option value="">All Classes</option>'].concat(STATE.classes.map(function(c){
+      return '<option '+(entryState.class===c?'selected':'')+'>'+c+'</option>';
+    })).join('');
     main.innerHTML = '<div class="card">'
       + '<div class="form-row">'
       + '<div><label>Date</label><input type="date" id="e_Date" value="'+today+'" onchange="onEntryFiltersChange()"></div>'
       + '<div><label>Class</label><select id="e_Class" onchange="onEntryFiltersChange()">'+classOpts+'</select></div></div>'
-      + '<label>Student</label><select id="e_Student" onchange="loadStudentEntry()"></select>'
+      + '<label>Student</label><select id="e_Student" onchange="onEntryStudentChange()"></select>'
       + '<div id="entryFormArea"></div>'
       + '</div>'
+      + '<div class="section-title">🏖️ Holiday <button class="btn btn-sm btn-outline" onclick="openHolidayModal()">Mark / Remove Holiday</button></div>'
+      + '<div id="holidayBanner"></div>'
       + '<div class="section-title">🗓️ Entries for Selected Date</div>'
       + '<div id="dateEntriesArea" class="card"><div class="empty">Pick a date/class above</div></div>';
     populateStudentDropdown();
     loadDateEntriesList();
+    refreshHolidayBanner();
   });
 }
-function onEntryFiltersChange(){ populateStudentDropdown(); loadDateEntriesList(); }
+function onEntryFiltersChange(){
+  entryState.date = document.getElementById('e_Date').value;
+  entryState.class = document.getElementById('e_Class').value;
+  populateStudentDropdown();
+  loadDateEntriesList();
+  refreshHolidayBanner();
+}
+function onEntryStudentChange(){
+  entryState.studentId = document.getElementById('e_Student').value;
+  loadStudentEntry();
+}
 function populateStudentDropdown(){
   var cls = document.getElementById('e_Class').value;
-  var filtered = CACHE.studentsActive.filter(function(s){ return !cls || s.Class===cls; });
+  // String() coercion: Google Sheets silently stores pure-digit class names (e.g. "6") as
+  // a Number, so a strict === against the dropdown's string value would otherwise fail here.
+  var filtered = CACHE.studentsActive.filter(function(s){ return !cls || String(s.Class)===String(cls); });
   var sel = document.getElementById('e_Student');
   sel.innerHTML = '<option value="">-- Select Student to Add/Edit --</option>' + filtered.map(function(s){
-    return '<option value="'+s.StudentID+'">'+s.Name+' ('+s.StudentID+')</option>';
+    return '<option value="'+s.StudentID+'" '+(entryState.studentId===s.StudentID?'selected':'')+'>'+s.Name+' ('+s.StudentID+')</option>';
   }).join('');
-  document.getElementById('entryFormArea').innerHTML = '';
+  var stillValid = filtered.some(function(s){ return s.StudentID===entryState.studentId; });
+  if (stillValid){ sel.value = entryState.studentId; loadStudentEntry(); }
+  else { entryState.studentId = ''; document.getElementById('entryFormArea').innerHTML = ''; }
 }
 function loadDateEntriesList(){
   var date = document.getElementById('e_Date').value;
@@ -506,7 +535,7 @@ function loadDateEntriesList(){
   var area = document.getElementById('dateEntriesArea');
   area.innerHTML = '<div class="empty">Loading…</div>';
   api.getEntriesForDate(date).then(function(entries){
-    var filtered = cls ? entries.filter(function(e){return e.Class===cls;}) : entries;
+    var filtered = cls ? entries.filter(function(e){ return String(e.Class)===String(cls); }) : entries;
     if (!filtered.length){ area.innerHTML = '<div class="empty">No entries yet for this date</div>'; return; }
     var html = '<div class="table-wrap"><table><thead><tr><th>Student</th><th>Attendance</th><th># Activities</th><th>Test</th><th>Teacher</th><th>Actions</th></tr></thead><tbody>';
     filtered.forEach(function(e){
@@ -521,6 +550,7 @@ function loadDateEntriesList(){
   });
 }
 function editEntry(studentId){
+  entryState.studentId = studentId;
   document.getElementById('e_Student').value = studentId;
   loadStudentEntry();
   document.getElementById('entryFormArea').scrollIntoView({behavior:'smooth'});
@@ -538,6 +568,7 @@ function loadStudentEntry(){
   if (!sid){ area.innerHTML = ''; return; }
   var date = document.getElementById('e_Date').value;
   var student = CACHE.studentsActive.find(function(s){return s.StudentID===sid;});
+  if (!student){ area.innerHTML = ''; return; }
   api.getEntriesForDate(date).then(function(entries){
     var existing = entries.find(function(e){ return e.StudentID===sid; }) || {};
     var activities = existing.Activities || [];
@@ -618,25 +649,85 @@ function submitEntry(sid, sname, sclass){
   });
 }
 
+/* ===================== HOLIDAYS ===================== */
+function refreshHolidayBanner(){
+  var dateEl = document.getElementById('e_Date');
+  if (!dateEl) return;
+  var date = dateEl.value;
+  api.getHolidays({from:date, to:date}).then(function(list){
+    var banner = document.getElementById('holidayBanner');
+    if (!banner) return;
+    banner.innerHTML = list.length
+      ? ('<div class="card" style="background:#fdf0d0;border-color:#e0a51e;margin-bottom:12px;">'
+          + '<b>🏖️ This date is marked as a Holiday:</b> ' + list[0].Reason + ' '
+          + '<button class="btn btn-sm btn-danger" onclick="removeHoliday(\''+date+'\')">Remove Holiday</button></div>')
+      : '';
+  });
+}
+function openHolidayModal(){
+  var date = document.getElementById('e_Date').value;
+  var html = '<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">'
+    + '<span class="close-x" onclick="closeModal()">&times;</span><h3>🏖️ Mark Holiday</h3>'
+    + '<label>Date</label><input id="h_Date" type="date" value="'+date+'">'
+    + '<label>Reason</label><input id="h_Reason" placeholder="e.g. Festival, Public Holiday">'
+    + '<button class="btn btn-primary" onclick="submitHoliday()">Save Holiday</button></div></div>';
+  document.getElementById('modalRoot').innerHTML = html;
+}
+function submitHoliday(){
+  var data = { Date: val('h_Date'), Reason: val('h_Reason') || 'Holiday' };
+  if (!data.Date){ alert('Date is required'); return; }
+  api.saveHoliday(data, actor()).then(function(res){
+    if (!res.success){ alert(res.message); return; }
+    closeModal();
+    refreshHolidayBanner();
+  });
+}
+function removeHoliday(date){
+  if (!confirm('Remove the holiday marked for '+date+'?')) return;
+  api.deleteHoliday(date).then(function(){ refreshHolidayBanner(); });
+}
+
 /* ===================== REPORTS ===================== */
 function renderReports(){
   var main = document.getElementById('mainContent');
-  cached('students', api.getStudents).then(function(students){
+  Promise.all([
+    cached('students', api.getStudents),
+    STATE.role === 'admin' ? cached('teachers', api.getTeachers) : Promise.resolve([])
+  ]).then(function(res){
+    var students = res[0], teachers = res[1];
     var studentOpts = ['<option value="">All Students</option>'].concat(students.map(function(s){return '<option value="'+s.StudentID+'">'+s.Name+'</option>';})).join('');
     var classOpts = ['<option value="">All Classes</option>'].concat(STATE.classes.map(function(c){return '<option>'+c+'</option>';})).join('');
+    var teacherFilterHtml = '';
+    if (STATE.role === 'admin') {
+      var teacherOpts = ['<option value="">All Teachers</option>'].concat(teachers.map(function(t){return '<option value="'+t.TeacherID+'">'+t.Name+'</option>';})).join('');
+      teacherFilterHtml = '<select id="r_Teacher">'+teacherOpts+'</select>';
+    }
     main.innerHTML = '<div class="card"><div class="toolbar">'
       + '<select id="r_Student">'+studentOpts+'</select>'
       + '<select id="r_Class">'+classOpts+'</select>'
+      + teacherFilterHtml
       + '<input type="date" id="r_From"> <input type="date" id="r_To">'
       + '<button class="btn btn-primary" style="width:auto;" onclick="runReport()">Filter</button>'
+      + '<button class="btn btn-outline" style="width:auto;" onclick="clearReportFilters()">Clear</button>'
       + '<button class="btn btn-outline" onclick="exportCSV(window.lastReport||[], \'report\')">Export CSV</button>'
-      + '</div><div id="reportArea"></div></div>';
+      + '</div><div id="holidaysInRange"></div><div id="reportArea"></div></div>';
     runReport();
   });
 }
+function clearReportFilters(){
+  ['r_Student','r_Class','r_Teacher','r_From','r_To'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  runReport();
+}
 function runReport(){
   var filters = { studentId: val('r_Student'), className: val('r_Class'), from: val('r_From'), to: val('r_To') };
-  if (STATE.role === 'teacher') filters.teacherId = STATE.teacherId;
+  if (STATE.role === 'teacher') {
+    filters.teacherId = STATE.teacherId; // "My Reports" always scoped to the logged-in teacher
+  } else {
+    var tEl = document.getElementById('r_Teacher');
+    if (tEl && tEl.value) filters.teacherId = tEl.value;
+  }
   api.getReportData(filters).then(function(rows){
     window.lastReport = rows;
     var area = document.getElementById('reportArea');
@@ -652,6 +743,13 @@ function runReport(){
         + '<td>'+(canEdit ? ('<button class="btn btn-sm btn-danger" onclick="deleteEntryConfirm(\''+e.EntryID+'\');setTimeout(runReport,400)">Delete</button>') : '') + '</td></tr>';
     });
     area.innerHTML = html + '</tbody></table></div>';
+  });
+  api.getHolidays({from:filters.from, to:filters.to}).then(function(holidays){
+    var area = document.getElementById('holidaysInRange');
+    if (!area) return;
+    area.innerHTML = holidays.length
+      ? ('<div class="section-title">🏖️ Holidays</div><div class="table-wrap" style="margin-bottom:12px;">' + tableize(holidays,['Date','Reason'],['Date','Reason']) + '</div>')
+      : '';
   });
 }
 function exportCSV(rows, name){
@@ -673,17 +771,19 @@ function exportCSV(rows, name){
 
 /* ===================== PARENT PORTAL (no login, read-only) ===================== */
 var parentAllEntries = []; // cached client-side so the date filter needs no extra API calls
+var parentAllHolidays = [];
 function loadParentPortal(studentId){
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appScreen').classList.add('hidden');
   document.getElementById('parentScreen').classList.remove('hidden');
   var content = document.getElementById('parentContent');
   content.innerHTML = '<div class="empty">Loading student profile…</div>';
-  Promise.all([api.getConfig(), api.getStudentProfile(studentId)]).then(function(res){
-    var cfg = res[0], profile = res[1];
+  Promise.all([api.getConfig(), api.getStudentProfile(studentId), api.getHolidays({})]).then(function(res){
+    var cfg = res[0], profile = res[1], holidays = res[2];
     applyBrandingEverywhere(cfg);
     if (!profile.success){ content.innerHTML = '<div class="empty">'+profile.message+'</div>'; return; }
     parentAllEntries = profile.entries || [];
+    parentAllHolidays = holidays || [];
 
     var s = profile.student;
     var today = new Date().toISOString().substring(0,10);
@@ -737,11 +837,18 @@ function renderParentTimeline(){
     var acts = (e.Activities||[]).map(function(a){
       return a.activity + (a.subject ? ' - '+a.subject : '') + (a.time ? ' ('+a.time+(a.status?', '+a.status:'')+')' : (a.status ? ' ('+a.status+')' : ''));
     }).join('; ');
-    return { date:e.Date, attendance:e.Attendance||'-', activities: acts || '-', remarks: e.Observation || '-' };
+    return { date:e.Date, attendance:e.Attendance||'-', activities: acts || '-', teacher: e.TeacherName || '-', remarks: e.Observation || '-' };
   });
+  // holidays are global (visible to every student) - merge them into the same timeline
+  var holidayRows = parentAllHolidays.filter(function(h){
+    if (from && h.Date < from) return false;
+    if (to && h.Date > to) return false;
+    return true;
+  }).map(function(h){ return { date:h.Date, attendance:'Holiday', activities:'🏖️ '+h.Reason, teacher:'-', remarks:'-' }; });
+  var merged = timeline.concat(holidayRows).sort(function(a,b){ return new Date(b.date) - new Date(a.date); });
   var area = document.getElementById('parentTimelineArea');
-  area.innerHTML = timeline.length
-    ? tableize(timeline, ['date','attendance','activities','remarks'], ['Date','Attendance','Activities Performed','Teacher Remarks'])
+  area.innerHTML = merged.length
+    ? tableize(merged, ['date','attendance','activities','teacher','remarks'], ['Date','Attendance','Activities Performed','Teacher','Teacher Remarks'])
     : '<div class="empty">No records in this date range</div>';
 }
 </script>
